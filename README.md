@@ -12,13 +12,6 @@ Derived from:
 ## Contents
 - Public VBA source files under `src/` and `Module/`
 
-## Excluded from this repository
-- Project-specific URLs
-- Internal/company URLs
-- Personal helper code
-- Credentials
-- Cookie-operation code
-
 ## License
 This repository is published under the MIT License.
 See `LICENSE`.
