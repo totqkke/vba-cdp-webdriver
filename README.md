@@ -10,7 +10,7 @@ Derived from:
 - 24000/ChromeControler-No-Selenium-WebDriver-VBAJSON
 
 ## Contents
-- Public VBA source files under `src/`
+- Public VBA source files under `src/` and `Module/`
 
 ## Excluded from this repository
 - Project-specific URLs
