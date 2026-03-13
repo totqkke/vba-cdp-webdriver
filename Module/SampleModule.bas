@@ -1,4 +1,4 @@
-Attribute VB_Name = "SubModule"
+﻿Attribute VB_Name = "SampleModule"
 Option Explicit
 
 '========================================================
@@ -216,6 +216,20 @@ Public Sub RunAllSamples()
     Debug.Print "[START] " & currentProc
     Sample_40_Window_And_PasteShot_Basic
     Debug.Print "[OK] " & currentProc
+
+    currentProc = "Sample_41_SelectBox_APIs"
+    Debug.Print "[START] " & currentProc
+    Sample_41_SelectBox_APIs
+    Debug.Print "[OK] " & currentProc
+
+    currentProc = "Sample_42_Input_Helper_APIs"
+    Debug.Print "[START] " & currentProc
+    Sample_42_Input_Helper_APIs
+    Debug.Print "[OK] " & currentProc
+
+    currentProc = "Sample_43_Dispatch_Event_APIs"
+    Debug.Print "[START] " & currentProc
+    Sample_43_Dispatch_Event_APIs
 
     Debug.Print "[DONE] RunAllSamples"
     Exit Sub
@@ -2066,6 +2080,178 @@ Public Sub Sample_40_Window_And_PasteShot_Basic()
     Debug.Print "Shape.Name = " & shp.name
     Debug.Print "Shape.Width = " & shp.width
     Debug.Print "Shape.Height = " & shp.height
+    
+    drv.CloseWindow
+End Sub
+
+'========================================================
+' 41. Select 要素系 API
+' 何ができるか:
+' - SelectItemInSelectBoxByText で選択肢を切り替えできる
+' - GetSelectedValue で現在選択 value を取得できる
+' - GetSelectedTextContent で現在選択 text を取得できる
+'
+' 使いどころ:
+' - select 要素の選択状態を text 基準で変えたいケース
+' - 選択後の value / 表示文字列の両方を確認したいケース
+'
+' このサンプルの確認ポイント:
+' - SelectItemInSelectBoxByText が動くこと
+' - GetSelectedValue が value を返すこと
+' - GetSelectedTextContent が表示文字列を返すこと
+'========================================================
+Public Sub Sample_41_SelectBox_APIs()
+    Dim drv As IWebDriver
+    Set drv = NewDriver()
+    
+    drv.OpenURL "data:text/html," & _
+                "<html><body>" & _
+                "<select id='sel1'>" & _
+                "<option value='A'>Alpha</option>" & _
+                "<option value='B'>Beta</option>" & _
+                "<option value='C'>Gamma</option>" & _
+                "</select>" & _
+                "</body></html>"
+    
+    Dim sel As IWebElement
+    Set sel = drv.FindElementById("sel1")
+    
+    ' 表示文字列 "Beta" を持つ option を選択する
+    sel.SelectItemInSelectBoxByText "Beta"
+    
+    ' 現在の value を確認する
+    Debug.Print "SelectedValue = " & sel.GetSelectedValue
+    
+    ' 現在の表示文字列を確認する
+    Debug.Print "SelectedText = " & sel.GetSelectedTextContent
+    
+    drv.CloseWindow
+End Sub
+
+'========================================================
+' 42. 入力補助 API
+' 何ができるか:
+' - SetTextContent で textContent を直接書き換えできる
+' - SetValueViaPropertySetter で value setter 経由の入力ができる
+' - FocusAndEnterKey で Enter キー入力を発生できる
+'
+' 使いどころ:
+' - 通常の SetValue ではなく property setter 経由で値を入れたいケース
+' - contenteditable / textContent ベースの要素を更新したいケース
+' - Enter キー押下を明示的に発生させたいケース
+'
+' このサンプルの確認ポイント:
+' - SetTextContent が div の textContent を更新すること
+' - SetValueViaPropertySetter が input value を更新すること
+' - FocusAndEnterKey で Enter 押下結果が反映されること
+'========================================================
+Public Sub Sample_42_Input_Helper_APIs()
+    Dim drv As IWebDriver
+    Set drv = NewDriver()
+    
+    drv.OpenURL "data:text/html," & _
+                "<html><body>" & _
+                "<div id='txtDiv'>before</div>" & _
+                "<input id='txt1' value=''>" & _
+                "<div id='out'></div>" & _
+                "<script>" & _
+                "document.getElementById('txt1').addEventListener('keydown',function(e){" & _
+                " if(e.key==='Enter'){document.getElementById('out').textContent='ENTER:' + this.value;}" & _
+                "});" & _
+                "</script>" & _
+                "</body></html>"
+    
+    Dim div1 As IWebElement
+    Dim txt1 As IWebElement
+    
+    Set div1 = drv.FindElementById("txtDiv")
+    Set txt1 = drv.FindElementById("txt1")
+    
+    ' div の textContent を直接書き換える
+    div1.SetTextContent "after-textContent"
+    Debug.Print "txtDiv = " & div1.GetTextContent
+    
+    ' input の value を property setter 経由で更新する
+    Call txt1.SetValueViaPropertySetter("setter-input")
+    Debug.Print "txt1.value = " & CStr(txt1.GetProperty("value"))
+    
+    ' focus して Enter を送る
+    txt1.FocusAndEnterKey
+    drv.SleepByWinAPI 500
+    
+    ' Enter 押下結果を確認する
+    Debug.Print "out = " & drv.FindElementById("out").GetTextContent
+    
+    drv.CloseWindow
+End Sub
+
+'========================================================
+' 43. 要素イベント発火 API
+' 何ができるか:
+' - DispatchCDPKeyEvent でキーイベントを発火できる
+' - DispatchJSInputEvent / DispatchJSChangeEvent / DispatchJSFocusEvent が使える
+' - DispatchJSMouseEvent / DispatchJSKeyboardEvent が使える
+'
+' 使いどころ:
+' - 値変更後に input / change / focus イベントを明示的に流したいケース
+' - JS ベースの監視ロジックに対してイベントだけを発火したいケース
+' - キーイベント / マウスイベントの最低限の動作確認をしたいケース
+'
+' このサンプルの確認ポイント:
+' - JS input / change / focus イベントが記録されること
+' - JS mouse / keyboard イベントが記録されること
+' - CDP key event 実行後も処理継続できること
+'========================================================
+Public Sub Sample_43_Dispatch_Event_APIs()
+    Dim drv As IWebDriver
+    Set drv = NewDriver()
+    
+    drv.OpenURL "data:text/html," & _
+                "<html><body>" & _
+                "<input id='txt1' value=''>" & _
+                "<button id='btn1'>BTN</button>" & _
+                "<div id='log'></div>" & _
+                "<script>" & _
+                "window.__evlog=[];" & _
+                "function addLog(s){window.__evlog.push(s);document.getElementById('log').textContent=window.__evlog.join('|');}" & _
+                "var t=document.getElementById('txt1');" & _
+                "var b=document.getElementById('btn1');" & _
+                "t.addEventListener('focus',function(){addLog('focus');});" & _
+                "t.addEventListener('input',function(){addLog('input');});" & _
+                "t.addEventListener('change',function(){addLog('change');});" & _
+                "t.addEventListener('keydown',function(e){addLog('keydown:' + e.key);});" & _
+                "b.addEventListener('click',function(){addLog('click');});" & _
+                "</script>" & _
+                "</body></html>"
+    
+    Dim txt1 As IWebElement
+    Dim btn1 As IWebElement
+    
+    Set txt1 = drv.FindElementById("txt1")
+    Set btn1 = drv.FindElementById("btn1")
+    
+    ' 先に value を入れておく
+    txt1.SetValue "event-test"
+    
+    ' JS focus / input / change を発火する
+    txt1.DispatchJSFocusEvent
+    txt1.DispatchJSInputEvent
+    txt1.DispatchJSChangeEvent
+    
+    ' JS keyboard event を発火する
+    txt1.DispatchJSKeyboardEvent KeyDown, Enter_Key
+    
+    ' CDP keyboard event を発火する
+    txt1.DispatchCDPKeyEvent KeyDown_, Enter_Key
+    txt1.DispatchCDPKeyEvent KeyUp_, Enter_Key
+    
+    ' JS mouse click を発火する
+    btn1.DispatchJSMouseEvent LeftClick
+    
+    drv.SleepByWinAPI 500
+    
+    ' 発火したイベント列を確認する
+    Debug.Print "EventLog = " & drv.FindElementById("log").GetTextContent
     
     drv.CloseWindow
 End Sub
