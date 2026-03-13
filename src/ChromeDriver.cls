@@ -73,76 +73,54 @@ Private chromeHwnd_ As LongPtr
 
 ' 専用ブラウザ起動と内部初期化を行う
 Private Sub Class_Initialize()
-    On Error GoTo EH
-
-    Dim userDataDir As String
-    Dim needsBootstrap As Boolean
-
-    userDataDir = CreateObject("Shell.Application").Namespace("shell:Downloads").Self.path & "\マクロ実行専用UserDataフォルダForChrome\"
-
-    EnsureUserDataFolder userDataDir
-    needsBootstrap = (IsFirstRunCompleted(userDataDir) = False)
-
-    If needsBootstrap Then
-        DeleteFirstRunMarker userDataDir
-        WarmUpFirstRun userDataDir
-    End If
-
-    processId_ = StartChrome(userDataDir)
-    New_InnerObjects
-
-    CDP_.SetDiscoverTargets
-    CDP_.AttachToTarget basicInfo_.targetId
-
-    CDP_.PageEnable
-    CDP_.DOMEnable
-    CDP_.RuntimeEnable
-    CDP_.NetworkEnable
-    CDP_.SetLifecycleEventsEnabled True
-
-    WaitForActivation
-
-    If needsBootstrap Then
-        MarkFirstRunCompleted userDataDir
-    End If
-
-    Exit Sub
-
+ On Error GoTo EH
+ 
+ Dim userDataDir As String
+ userDataDir = CreateObject("Shell.Application").Namespace("shell:Downloads").Self.path & "\\マクロ実行専用UserDataフォルダForChrome\\"
+ 
+ EnsureUserDataFolder userDataDir
+ 
+ processId_ = StartChrome(userDataDir)
+ New_InnerObjects
+ CDP_.SetDiscoverTargets
+ CDP_.AttachToTarget basicInfo_.targetId
+ CDP_.PageEnable
+ CDP_.DOMEnable
+ CDP_.RuntimeEnable
+ CDP_.NetworkEnable
+ CDP_.SetLifecycleEventsEnabled True
+ WaitForActivation
+ 
+ Exit Sub
 EH:
-    Dim errNum As Long
-    Dim errSrc As String
-    Dim errDesc As String
-
-    errNum = Err.Number
-    errSrc = Err.source
-    errDesc = Err.Description
-
-    On Error Resume Next
-    CloseInternalSession
-    On Error GoTo 0
-
-    If needsBootstrap Then
-        DeleteFirstRunMarker userDataDir
-        Err.Raise vbObjectError + 2611, "ChromeDriver.Class_Initialize", _
-                  "初回セットアップを完了できませんでした。専用UserDataフォルダを削除して再実行してください。"
-    Else
-        Err.Raise errNum, errSrc, errDesc
-    End If
+ Dim errNum As Long
+ Dim errSrc As String
+ Dim errDesc As String
+ 
+ errNum = Err.Number
+ errSrc = Err.source
+ errDesc = Err.Description
+ 
+ On Error Resume Next
+ CloseInternalSession
+ On Error GoTo 0
+ 
+ Err.Raise errNum, errSrc, errDesc
 End Sub
+
 
 ' Chrome をリモートデバッグ有効で起動する
 Private Function StartChrome(userDataDir As String) As Long
     Const CHROME_EXE_REG_KEY As String = "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe\"
     Const DEBUG_MODE_OPTION As String = " --remote-debugging-Port=9222"
     Const USER_DATA_DIR_OPTION As String = " --user-data-dir="
-    Const ENABLE_AUTOMATION_OPTION As String = " --enable-automation"
 
     Dim chromeExePath As String
     Dim objExec As Object
     With CreateObject("WScript.Shell")
         chromeExePath = """" & .RegRead(CHROME_EXE_REG_KEY) & """"
         Set objExec = .Exec( _
-                            chromeExePath & DEBUG_MODE_OPTION & ENABLE_AUTOMATION_OPTION & " --disable-popup-blocking --no-first-run --disable-fre" _
+                            chromeExePath & DEBUG_MODE_OPTION & " --disable-popup-blocking --no-first-run --disable-fre" _
                             & USER_DATA_DIR_OPTION & "" & userDataDir & "")
 
         StartChrome = objExec.ProcessId
@@ -154,40 +132,6 @@ End Function
 Private Sub EnsureUserDataFolder(ByVal userDataDir As String)
     If Dir$(userDataDir, vbDirectory) = "" Then
         MkDir userDataDir
-    End If
-End Sub
-
-' 初回実行完了マーカーファイルのパスを返す
-Private Function GetFirstRunMarkerPath(ByVal userDataDir As String) As String
-    If Right$(userDataDir, 1) <> "\" Then userDataDir = userDataDir & "\"
-    GetFirstRunMarkerPath = userDataDir & "init.ok"
-End Function
-
-' 初回実行完了マーカーの有無を判定する
-Private Function IsFirstRunCompleted(ByVal userDataDir As String) As Boolean
-    IsFirstRunCompleted = (Dir$(GetFirstRunMarkerPath(userDataDir)) <> "")
-End Function
-
-' 初回実行完了マーカーを作成する
-Private Sub MarkFirstRunCompleted(ByVal userDataDir As String)
-    Dim markerPath As String
-    Dim ff As Integer
-
-    markerPath = GetFirstRunMarkerPath(userDataDir)
-    ff = FreeFile
-
-    Open markerPath For Output As #ff
-    Print #ff, "ok"
-    Close #ff
-End Sub
-
-' 初回実行完了マーカーを削除する
-Private Sub DeleteFirstRunMarker(ByVal userDataDir As String)
-    Dim markerPath As String
-    markerPath = GetFirstRunMarkerPath(userDataDir)
-
-    If Dir$(markerPath) <> "" Then
-        Kill markerPath
     End If
 End Sub
 

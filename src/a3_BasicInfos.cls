@@ -48,14 +48,20 @@ End Property
 ' 現在のターゲット情報を初期化する
 Public Sub Init(json As a2_JSONHandler)
     TargetInfoJSON = GetTargetInfoJSON
-
-    webSocketURL = json.GetValue( _
-        TargetInfoJSON, 0, KEY_WEBSOCKETURL)
+    
+    Dim i As Long
+    For i = 0 To json.GetJsonLength(TargetInfoJSON)
+        If json.GetValue(TargetInfoJSON, i, "type") = "page" _
+        And json.GetValue(TargetInfoJSON, i, "title") = "新しいタブ" Then
+            webSocketURL = json.GetValue(TargetInfoJSON, i, KEY_WEBSOCKETURL)
+            Exit For
+        End If
+    Next
+    
     targetId = json.GetValue(TargetInfoJSON, 0, "id")
     PageDefaultTargetId = targetId
-
     webSocketURLPath = Replace(webSocketURL, _
-        WEBSOCKET_SCHEMA & HOST_ & ":" & DEBUGGING_PORT, "")
+    WEBSOCKET_SCHEMA & HOST_ & ":" & DEBUGGING_PORT, "")
     Context = Replace(webSocketURLPath, targetId, "")
 End Sub
 
