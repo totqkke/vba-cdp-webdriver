@@ -52,9 +52,12 @@ Public Sub Init(json As a2_JSONHandler)
     Dim i As Long
     For i = 0 To json.GetJsonLength(TargetInfoJSON)
         If json.GetValue(TargetInfoJSON, i, "type") = "page" _
-        And json.GetValue(TargetInfoJSON, i, "title") = "新しいタブ" Then
-            webSocketURL = json.GetValue(TargetInfoJSON, i, KEY_WEBSOCKETURL)
-            Exit For
+        And (json.GetValue(TargetInfoJSON, i, "url") Like "*://newtab/" _
+          Or json.GetValue(TargetInfoJSON, i, "url") Like "*://new-tab-page/" _
+          Or json.GetValue(TargetInfoJSON, i, "url") Like "http://*" _
+          Or json.GetValue(TargetInfoJSON, i, "url") Like "https://*") Then
+                webSocketURL = json.GetValue(TargetInfoJSON, i, KEY_WEBSOCKETURL)
+                Exit For
         End If
     Next
     
