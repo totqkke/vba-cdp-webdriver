@@ -69,6 +69,12 @@ Private CDP_ As a4_ExecuteCDP
 Private events_ As a5_CDPEventHandler
 Private Helper_ As a6_ExecuteHelperFunction
 
+Private downloadWatchDir_ As String
+Private downloadWatchKnownFiles_ As Object
+Private downloadWatchCandidatePath_ As String
+Private downloadWatchCandidateLastSize_ As Double
+Private downloadWatchCandidateStableCount_ As Long
+
 Private processId_ As Long
 'Private chromeHwnd_ As LongPtr
 Private Sub Class_Initialize()
@@ -199,7 +205,6 @@ Private Function FindWebSocketPathByTargetId(tabs As Collection, ByVal targetId 
         End If
     Next
 End Function
-
 ' 指定 targetId へ再接続する
 Private Sub ReconnectToTarget(ByVal targetId As String)
     Dim tabs As Collection: Set tabs = GetPageTabs()
@@ -243,7 +248,57 @@ Private Sub ReconnectToTarget(ByVal targetId As String)
     basicInfo_.DocumentObjectId = CDP_.GetDocumentObjectID
     basicInfo_.DocumentNodeId = CDP_.GetDocumentNodeID
 End Sub
+Private Function FindCompletedDownloadedFilePath_() As String
+    Dim f As String
+    Dim fullPath As String
+    Dim fileNameLower As String
+    Dim sizeNow As Double
 
+    If Len(downloadWatchDir_) = 0 Then Exit Function
+    If downloadWatchKnownFiles_ Is Nothing Then Exit Function
+
+    f = Dir$(downloadWatchDir_ & "\*.*", vbNormal Or vbHidden Or vbReadOnly Or vbSystem)
+    Do While Len(f) > 0
+        fileNameLower = LCase$(f)
+
+        If Not downloadWatchKnownFiles_.Exists(fileNameLower) Then
+            If IsTemporaryDownloadFile_(fileNameLower) = False Then
+                fullPath = downloadWatchDir_ & "\" & f
+                sizeNow = FileLen(fullPath)
+
+                If StrComp(downloadWatchLastCandidatePath_, fullPath, vbTextCompare) = 0 Then
+                    If CDbl(downloadWatchLastCandidateSize_) = CDbl(sizeNow) Then
+                        downloadWatchKnownFiles_.Add fileNameLower, True
+                        FindCompletedDownloadedFilePath_ = fullPath
+                        Exit Function
+                    End If
+                End If
+
+                downloadWatchLastCandidatePath_ = fullPath
+                downloadWatchLastCandidateSize_ = sizeNow
+            End If
+        End If
+
+        f = Dir$
+    Loop
+End Function
+
+Private Function IsTemporaryDownloadFile_(ByVal fileNameLower As String) As Boolean
+    If Right$(fileNameLower, 12) = ".crdownload" Then
+        IsTemporaryDownloadFile_ = True
+        Exit Function
+    End If
+
+    If Right$(fileNameLower, 4) = ".tmp" Then
+        IsTemporaryDownloadFile_ = True
+        Exit Function
+    End If
+
+    If Right$(fileNameLower, 5) = ".part" Then
+        IsTemporaryDownloadFile_ = True
+        Exit Function
+    End If
+End Function
 ' 内部オブジェクトを生成する
 Private Sub New_InnerObjects()
     Set json_ = New a2_JSONHandler
@@ -978,36 +1033,105 @@ End Sub
 
 ' DownloadWatch 関連処理
 Private Sub IWebDriver_DownloadWatchStart(downloadDir As String, Optional allowAndName As Boolean = False)
- events_.ClearDownloadInfo
- CDP_.SetDownloadBehavior downloadDir, allowAndName, True
+    events_.ClearDownloadInfo
+    CDP_.SetDownloadBehavior downloadDir, allowAndName, True
+
+    downloadWatchDir_ = downloadDir
+    If Right$(downloadWatchDir_, 1) = "\" Then
+        downloadWatchDir_ = left$(downloadWatchDir_, Len(downloadWatchDir_) - 1)
+    End If
+
+    Set downloadWatchKnownFiles_ = CreateObject("Scripting.Dictionary")
+    Call SnapshotDownloadDir_(downloadWatchKnownFiles_, downloadWatchDir_)
+
+    downloadWatchCandidatePath_ = ""
+    downloadWatchCandidateLastSize_ = -1
+    downloadWatchCandidateStableCount_ = 0
 End Sub
 
 ' ダウンロード完了まで待機する
 Private Function IWebDriver_DownloadWatchWaitCompleted(maxWaitTime_sec As Long) As Boolean
- Dim startT As Single
- startT = Timer
- Do
-  ' イベント受信を進める
-  CDP_.ExecuteJavaScript "0;"
-  If events_.DownloadInfoDic("State") = "completed" Then
-   IWebDriver_DownloadWatchWaitCompleted = True
-   Exit Function
-  End If
-  If CLng(Timer - startT) > maxWaitTime_sec Then Exit Function
-  DoEvents
-  Helper_.SleepByWinAPI 200
- Loop
-End Function
+    Dim startT As Single
+    Dim candidatePath As String
+    Dim fileName As String
+    Dim sizeNow As Double
 
+    startT = Timer
+
+    Do
+        candidatePath = ResolveCurrentDownloadCandidatePath_()
+
+        If Len(candidatePath) > 0 Then
+            If StrComp(downloadWatchCandidatePath_, candidatePath, vbTextCompare) <> 0 Then
+                downloadWatchCandidatePath_ = candidatePath
+                downloadWatchCandidateLastSize_ = -1
+                downloadWatchCandidateStableCount_ = 0
+            End If
+
+            If Len(Dir$(candidatePath, vbNormal Or vbHidden Or vbReadOnly Or vbSystem)) > 0 Then
+                sizeNow = FileLen(candidatePath)
+
+                If CDbl(downloadWatchCandidateLastSize_) = CDbl(sizeNow) Then
+                    downloadWatchCandidateStableCount_ = downloadWatchCandidateStableCount_ + 1
+                Else
+                    downloadWatchCandidateStableCount_ = 0
+                End If
+
+                downloadWatchCandidateLastSize_ = sizeNow
+
+                fileName = FileNameFromPathLocal_(candidatePath)
+
+                ' 最終ファイルが2回連続で同サイズなら完了
+                If IsTempDownloadFileName_(LCase$(fileName)) = False Then
+                    If downloadWatchCandidateStableCount_ >= 1 Then
+                        events_.DownloadInfoDic("State") = "completed"
+                        events_.DownloadInfoDic("FilePath") = candidatePath
+                        events_.DownloadInfoDic("SuggestedFilename") = fileName
+
+                        If Not downloadWatchKnownFiles_.Exists(LCase$(fileName)) Then
+                            downloadWatchKnownFiles_.Add LCase$(fileName), True
+                        End If
+
+                        IWebDriver_DownloadWatchWaitCompleted = True
+                        Exit Function
+                    End If
+                End If
+            End If
+        End If
+
+        If CLng(Timer - startT) > maxWaitTime_sec Then Exit Function
+
+        DoEvents
+        Helper_.SleepByWinAPI 200
+    Loop
+End Function
 ' 提案ファイル名を返す
 Private Function IWebDriver_DownloadWatchSuggestedFilename() As String
- IWebDriver_DownloadWatchSuggestedFilename = CStr(events_.DownloadInfoDic("SuggestedFilename"))
+    Dim s As String
+
+    s = CStr(events_.DownloadInfoDic("SuggestedFilename"))
+
+    If Len(s) = 0 Then
+        s = FileNameFromPathLocal_(downloadWatchCandidatePath_)
+    End If
+
+    IWebDriver_DownloadWatchSuggestedFilename = NormalizeDownloadedFileName_(s)
 End Function
+
 
 ' ダウンロードファイルパスを返す
 Private Function IWebDriver_DownloadWatchFilePath() As String
- IWebDriver_DownloadWatchFilePath = CStr(events_.DownloadInfoDic("FilePath"))
+    Dim p As String
+
+    p = CStr(events_.DownloadInfoDic("FilePath"))
+
+    If Len(p) = 0 Then
+        p = downloadWatchCandidatePath_
+    End If
+
+    IWebDriver_DownloadWatchFilePath = p
 End Function
+
 
 ' 現在ページを PDF 保存し、保存先パスを返す
 Private Function IWebDriver_PrintToPDFSaveAsFile( _
@@ -2132,18 +2256,18 @@ Private Property Get IWebDriver_QueryString() As Object
     Dim dic As Object
     Set dic = CreateObject("Scripting.Dictionary")
     
-    Dim currentUrl As String
-    currentUrl = IWebDriver_URL
+    Dim currentURL As String
+    currentURL = IWebDriver_URL
     
     Dim p As Long
-    p = InStr(1, currentUrl, "?", vbBinaryCompare)
+    p = InStr(1, currentURL, "?", vbBinaryCompare)
     If p = 0 Then
         Set IWebDriver_QueryString = dic
         Exit Property
     End If
     
     Dim qs As String
-    qs = Mid$(currentUrl, p + 1)
+    qs = Mid$(currentURL, p + 1)
     
     Dim hashPos As Long
     hashPos = InStr(1, qs, "#", vbBinaryCompare)
@@ -2376,6 +2500,121 @@ Private Function EscapeJsonStringLocal(ByVal value As String) As String
     s = Replace(s, vbCr, "\n")
     s = Replace(s, vbLf, "\n")
     EscapeJsonStringLocal = s
+End Function
+
+Private Function NormalizeDownloadedFileName_(ByVal fileName As String) As String
+    Dim s As String
+
+    s = fileName
+
+    If LCase$(Right$(s, 12)) = ".crdownload" Then
+        s = left$(s, Len(s) - 12)
+    End If
+
+    If LCase$(Right$(s, 4)) = ".tmp" Then
+        s = left$(s, Len(s) - 4)
+    End If
+
+    If LCase$(Right$(s, 5)) = ".part" Then
+        s = left$(s, Len(s) - 5)
+    End If
+
+    NormalizeDownloadedFileName_ = s
+End Function
+
+Private Function FileNameFromPathLocal_(ByVal fullPath As String) As String
+    If InStrRev(fullPath, "\") > 0 Then
+        FileNameFromPathLocal_ = Mid$(fullPath, InStrRev(fullPath, "\") + 1)
+    Else
+        FileNameFromPathLocal_ = fullPath
+    End If
+End Function
+Private Sub RestoreDownloadWatchSourceTarget_()
+    If Len(downloadWatchSourceTargetId_) = 0 Then Exit Sub
+
+    If CStr(basicInfo_.targetId) <> downloadWatchSourceTargetId_ Then
+        ReconnectToTarget downloadWatchSourceTargetId_
+    End If
+End Sub
+
+Private Sub SnapshotDownloadDir_(ByRef dic As Object, ByVal folderPath As String)
+    Dim f As String
+
+    f = Dir$(folderPath & "\*.*", vbNormal Or vbHidden Or vbReadOnly Or vbSystem)
+    Do While Len(f) > 0
+        If Not dic.Exists(LCase$(f)) Then
+            dic.Add LCase$(f), True
+        End If
+        f = Dir$
+    Loop
+End Sub
+Private Function ResolveCurrentDownloadCandidatePath_() As String
+    Dim f As String
+    Dim fullPath As String
+    Dim fileNameLower As String
+    Dim bestFinalPath As String
+    Dim bestFinalTime As Date
+    Dim bestTempPath As String
+    Dim bestTempTime As Date
+    Dim normalizedFinalPath As String
+
+    f = Dir$(downloadWatchDir_ & "\*.*", vbNormal Or vbHidden Or vbReadOnly Or vbSystem)
+    Do While Len(f) > 0
+        fileNameLower = LCase$(f)
+        fullPath = downloadWatchDir_ & "\" & f
+
+        If Not downloadWatchKnownFiles_.Exists(fileNameLower) Then
+            If IsTempDownloadFileName_(fileNameLower) Then
+                normalizedFinalPath = downloadWatchDir_ & "\" & NormalizeDownloadedFileName_(f)
+
+                ' temp に対応する最終ファイルが既に出ていれば最終ファイルを優先
+                If Len(Dir$(normalizedFinalPath, vbNormal Or vbHidden Or vbReadOnly Or vbSystem)) > 0 Then
+                    ResolveCurrentDownloadCandidatePath_ = normalizedFinalPath
+                    Exit Function
+                End If
+
+                If bestTempPath = "" Then
+                    bestTempPath = fullPath
+                    bestTempTime = FileDateTime(fullPath)
+                ElseIf FileDateTime(fullPath) > bestTempTime Then
+                    bestTempPath = fullPath
+                    bestTempTime = FileDateTime(fullPath)
+                End If
+            Else
+                If bestFinalPath = "" Then
+                    bestFinalPath = fullPath
+                    bestFinalTime = FileDateTime(fullPath)
+                ElseIf FileDateTime(fullPath) > bestFinalTime Then
+                    bestFinalPath = fullPath
+                    bestFinalTime = FileDateTime(fullPath)
+                End If
+            End If
+        End If
+
+        f = Dir$
+    Loop
+
+    If Len(bestFinalPath) > 0 Then
+        ResolveCurrentDownloadCandidatePath_ = bestFinalPath
+    Else
+        ResolveCurrentDownloadCandidatePath_ = bestTempPath
+    End If
+End Function
+Private Function IsTempDownloadFileName_(ByVal fileNameLower As String) As Boolean
+    If Right$(fileNameLower, 12) = ".crdownload" Then
+        IsTempDownloadFileName_ = True
+        Exit Function
+    End If
+
+    If Right$(fileNameLower, 4) = ".tmp" Then
+        IsTempDownloadFileName_ = True
+        Exit Function
+    End If
+
+    If Right$(fileNameLower, 5) = ".part" Then
+        IsTempDownloadFileName_ = True
+        Exit Function
+    End If
 End Function
 
 
