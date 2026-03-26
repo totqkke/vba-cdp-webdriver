@@ -1,5 +1,10 @@
-Attribute VB_Name = "SubModule"
+﻿Attribute VB_Name = "SubModule"
 Option Explicit
+
+Public Enum BrowserType
+    BrowserType_Edge = 1
+    BrowserType_Chrome = 2
+End Enum
 
 ' UTF-8 テキストを保存する
 Public Sub SaveTextUtf8(ByVal filePath As String, ByVal text As String)
@@ -373,3 +378,111 @@ Public Sub Array2DToRange(arr As Variant, topLeft As Range)
     
     topLeft.Resize(rowCount, colCount).value = arr
 End Sub
+
+
+'========================================================
+' 既存ブラウザ attach + スクリーンショット貼り付け
+' 何ができるか:
+' - 今開いている Edge / Chrome に attach する
+' - スクリーンショットを撮影する
+' - 指定シートの最下部に、指定行数ぶん空けて貼り付ける
+'
+' 引数:
+' - browserType : BrowserType_Edge / BrowserType_Chrome
+' - sheetName   : 貼り付け先シート名
+' - blankRows   : 最終位置から空ける行数（省略時 1）
+'
+' このサンプルの確認ポイント:
+' - 既存ブラウザへ attach できること
+' - 既存セルの下、または既存画像の下に追記されること
+' - 2回目以降も同じ場所ではなく下へ積み上がること
+'========================================================
+Public Sub AttachBrowserAndPasteScreenshot( _
+    ByVal browserType_ As BrowserType, _
+    ByVal sheetName As String, _
+    Optional ByVal blankRows As Long = 1)
+
+    Dim drv As IWebDriver
+    Dim ws As Worksheet
+    Dim targetLeft As Single
+    Dim targetTop As Single
+
+    If blankRows < 0 Then
+        Err.Raise vbObjectError + 2501, "SubModule.AttachBrowserAndPasteScreenshot", _
+                  "blankRows には 0 以上を指定してください。"
+    End If
+
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+
+    Select Case browserType_
+        Case BrowserType.BrowserType_Edge
+            Set drv = NewAttachedEdgeDriver()
+        Case BrowserType.BrowserType_Chrome
+            Set drv = NewAttachedChromeDriver()
+        Case Else
+            Err.Raise vbObjectError + 2502, "SubModule.AttachBrowserAndPasteScreenshot", _
+                      "browserType が不正です。"
+    End Select
+
+    targetLeft = ws.cells(1, 1).left
+    targetTop = GetNextPasteTop_(ws, blankRows)
+
+    Call drv.ScreenShotPasteToSheet( _
+        left:=targetLeft, _
+        top:=targetTop, _
+        sheetName:=ws.name)
+
+    Set drv = Nothing
+End Sub
+Private Function GetNextPasteTop_(ByVal ws As Worksheet, ByVal blankRows As Long) As Single
+    Dim lastCell As Range
+    Dim lastDataRow As Long
+    Dim lastShapeBottomRow As Long
+    Dim baseRow As Long
+    Dim targetRow As Long
+    Dim shp As Shape
+
+    lastDataRow = 0
+    lastShapeBottomRow = 0
+
+    ' 将来のデータ増加時の計算量劣化を防ぐため、
+    ' 全セル走査ではなく Find で最終使用セルを一度だけ取得する
+    Set lastCell = ws.cells.Find(What:="*", _
+                                 After:=ws.cells(1, 1), _
+                                 LookIn:=xlFormulas, _
+                                 LookAt:=xlPart, _
+                                 SearchOrder:=xlByRows, _
+                                 SearchDirection:=xlPrevious, _
+                                 MatchCase:=False)
+
+    If Not lastCell Is Nothing Then
+        lastDataRow = lastCell.Row
+    End If
+
+    ' 既存画像の最下行を取得する
+    For Each shp In ws.Shapes
+        If shp.BottomRightCell.Row > lastShapeBottomRow Then
+            lastShapeBottomRow = shp.BottomRightCell.Row
+        End If
+    Next shp
+
+    If lastDataRow > lastShapeBottomRow Then
+        baseRow = lastDataRow
+    Else
+        baseRow = lastShapeBottomRow
+    End If
+
+    If baseRow = 0 Then
+        targetRow = 1
+    ElseIf baseRow = 1 Then
+        ' 1行目しか使っていない場合は空行を入れない
+        targetRow = 2
+    Else
+        targetRow = baseRow + blankRows + 1
+    End If
+
+    GetNextPasteTop_ = ws.cells(targetRow, 1).top
+    Debug.Print lastDataRow, lastShapeBottomRow, baseRow, targetRow
+End Function
+
+
