@@ -5,7 +5,11 @@ Public Enum BrowserType
     BrowserType_Edge = 1
     BrowserType_Chrome = 2
 End Enum
-
+Private Type PictureItem
+    ShapeName As String
+    TopPos As Double
+    LeftPos As Double
+End Type
 ' UTF-8 テキストを保存する
 Public Sub SaveTextUtf8(ByVal filePath As String, ByVal text As String)
     Dim st As Object
@@ -485,4 +489,144 @@ Private Function GetNextPasteTop_(ByVal ws As Worksheet, ByVal blankRows As Long
     Debug.Print lastDataRow, lastShapeBottomRow, baseRow, targetRow
 End Function
 
+Public Sub ExportPicturesInSheetByOrder()
+    Const TARGET_SHEET_NAME As String = "Sheet1"
+    Const OUTPUT_FOLDER As String = "C:\Temp\ExportPics"
+    Const FILE_PREFIX As String = "img_"
+
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets(TARGET_SHEET_NAME)
+
+    EnsureFolderExists OUTPUT_FOLDER
+
+    Dim items() As PictureItem
+    Dim picCount As Long
+    picCount = CollectPictureShapes(ws, items)
+
+    If picCount = 0 Then
+        Debug.Print "画像がありません。"
+        Exit Sub
+    End If
+
+    ' 将来の画像数増加時に、毎回最小位置を探す O(n^2) を避けるため、
+    ' 収集後に一度だけクイックソートで並べ替える
+    QuickSortPictureItems items, LBound(items), UBound(items)
+
+    Dim i As Long
+    Dim filePath As String
+
+    For i = LBound(items) To UBound(items)
+        filePath = OUTPUT_FOLDER & "\" & FILE_PREFIX & Format$(i, "000") & ".png"
+        ExportShapeAsPng ws.Shapes(items(i).ShapeName), filePath
+        Debug.Print filePath
+    Next i
+End Sub
+
+Private Function CollectPictureShapes(ByVal ws As Worksheet, ByRef items() As PictureItem) As Long
+    Dim shp As Shape
+    Dim count As Long
+    count = 0
+
+    For Each shp In ws.Shapes
+        If IsExportTargetShape(shp) Then
+            count = count + 1
+            ReDim Preserve items(1 To count)
+
+            items(count).ShapeName = shp.Name
+            items(count).TopPos = shp.Top
+            items(count).LeftPos = shp.Left
+        End If
+    Next shp
+
+    CollectPictureShapes = count
+End Function
+
+Private Function IsExportTargetShape(ByVal shp As Shape) As Boolean
+    Select Case shp.Type
+        Case msoPicture, msoLinkedPicture
+            IsExportTargetShape = True
+        Case Else
+            IsExportTargetShape = False
+    End Select
+End Function
+
+Private Sub QuickSortPictureItems(ByRef arr() As PictureItem, ByVal first As Long, ByVal last As Long)
+    Dim i As Long
+    Dim j As Long
+    Dim pivotTop As Double
+    Dim pivotLeft As Double
+    Dim tmp As PictureItem
+
+    i = first
+    j = last
+    pivotTop = arr((first + last) \ 2).TopPos
+    pivotLeft = arr((first + last) \ 2).LeftPos
+
+    Do While i <= j
+        Do While ComparePictureItem(arr(i).TopPos, arr(i).LeftPos, pivotTop, pivotLeft) < 0
+            i = i + 1
+        Loop
+
+        Do While ComparePictureItem(arr(j).TopPos, arr(j).LeftPos, pivotTop, pivotLeft) > 0
+            j = j - 1
+        Loop
+
+        If i <= j Then
+            tmp = arr(i)
+            arr(i) = arr(j)
+            arr(j) = tmp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If first < j Then QuickSortPictureItems arr, first, j
+    If i < last Then QuickSortPictureItems arr, i, last
+End Sub
+
+Private Function ComparePictureItem( _
+    ByVal top1 As Double, ByVal left1 As Double, _
+    ByVal top2 As Double, ByVal left2 As Double) As Long
+
+    If top1 < top2 Then
+        ComparePictureItem = -1
+    ElseIf top1 > top2 Then
+        ComparePictureItem = 1
+    Else
+        If left1 < left2 Then
+            ComparePictureItem = -1
+        ElseIf left1 > left2 Then
+            ComparePictureItem = 1
+        Else
+            ComparePictureItem = 0
+        End If
+    End If
+End Function
+
+Private Sub ExportShapeAsPng(ByVal shp As Shape, ByVal outputPath As String)
+    Dim ws As Worksheet
+    Set ws = shp.Parent
+
+    shp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+
+    Dim chObj As ChartObject
+    Set chObj = ws.ChartObjects.Add(Left:=0, Top:=0, Width:=shp.Width, Height:=shp.Height)
+
+    With chObj.Chart
+        .ChartArea.Clear
+        .Paste
+        .Export Filename:=outputPath, FilterName:="PNG"
+    End With
+
+    chObj.Delete
+End Sub
+
+Private Sub EnsureFolderExists(ByVal folderPath As String)
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+
+    If Not fso.FolderExists(folderPath) Then
+        fso.CreateFolder folderPath
+    End If
+End Sub
 
