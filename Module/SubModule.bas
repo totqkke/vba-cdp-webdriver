@@ -1,15 +1,33 @@
 ﻿Attribute VB_Name = "SubModule"
 Option Explicit
 
-Public Enum BrowserType
-    BrowserType_Edge = 1
-    BrowserType_Chrome = 2
-End Enum
+
+
+#If VBA7 Then
+    Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
+#Else
+    Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+#End If
+
+Private g_ExportWsName_ As String
+Private g_ExportTempChartName_ As String
+Private g_ExportOutputPath_ As String
+Private g_ExportBusy_ As Boolean
+Private g_ExportDone_ As Boolean
+Private g_ExportLastError_ As String
+
 Private Type PictureItem
     ShapeName As String
     TopPos As Double
     LeftPos As Double
 End Type
+
+
+Public Enum BrowserType
+    BrowserType_Edge = 1
+    BrowserType_Chrome = 2
+End Enum
+
 ' UTF-8 テキストを保存する
 Public Sub SaveTextUtf8(ByVal filePath As String, ByVal text As String)
     Dim st As Object
@@ -489,15 +507,16 @@ Private Function GetNextPasteTop_(ByVal ws As Worksheet, ByVal blankRows As Long
     Debug.Print lastDataRow, lastShapeBottomRow, baseRow, targetRow
 End Function
 
-Public Sub ExportPicturesInSheetByOrder()
-    Const TARGET_SHEET_NAME As String = "Sheet1"
-    Const OUTPUT_FOLDER As String = "C:\Temp\ExportPics"
-    Const FILE_PREFIX As String = "img_"
+
+Public Sub ExportPicturesInSheetByOrder( _
+    ByVal targetSheetName As String, _
+    ByVal outputFolder As String, _
+    Optional ByVal filePrefix As String = "img_")
 
     Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets(TARGET_SHEET_NAME)
+    Set ws = ThisWorkbook.Worksheets(targetSheetName)
 
-    EnsureFolderExists OUTPUT_FOLDER
+    EnsureFolderExists outputFolder
 
     Dim items() As PictureItem
     Dim picCount As Long
@@ -516,8 +535,11 @@ Public Sub ExportPicturesInSheetByOrder()
     Dim filePath As String
 
     For i = LBound(items) To UBound(items)
-        filePath = OUTPUT_FOLDER & "\" & FILE_PREFIX & Format$(i, "000") & ".png"
+        filePath = outputFolder & "\" & filePrefix & Format$(i, "000") & ".png"
+    
         ExportShapeAsPng ws.Shapes(items(i).ShapeName), filePath
+        WaitForExportShapeAsPng 15
+    
         Debug.Print filePath
     Next i
 End Sub
@@ -532,9 +554,9 @@ Private Function CollectPictureShapes(ByVal ws As Worksheet, ByRef items() As Pi
             count = count + 1
             ReDim Preserve items(1 To count)
 
-            items(count).ShapeName = shp.Name
-            items(count).TopPos = shp.Top
-            items(count).LeftPos = shp.Left
+            items(count).ShapeName = shp.name
+            items(count).TopPos = shp.top
+            items(count).LeftPos = shp.left
         End If
     Next shp
 
@@ -603,30 +625,83 @@ Private Function ComparePictureItem( _
     End If
 End Function
 
-Private Sub ExportShapeAsPng(ByVal shp As Shape, ByVal outputPath As String)
+
+
+Public Sub ExportShapeAsPng(ByVal shp As Shape, ByVal outputPath As String)
     Dim ws As Worksheet
+    Dim chObj As ChartObject
+
+    If g_ExportBusy_ Then
+        Err.Raise vbObjectError + 2601, "ExportShapeAsPng", _
+                  "前回の画像エクスポート処理がまだ完了していません。"
+    End If
+
     Set ws = shp.Parent
+
+    g_ExportWsName_ = ws.name
+    g_ExportTempChartName_ = "TempChartForExport_" & Format$(Now, "yyyymmdd_hhnnss") & "_" & CLng(Timer * 1000)
+    g_ExportOutputPath_ = outputPath
+    g_ExportBusy_ = True
+    g_ExportDone_ = False
+    g_ExportLastError_ = ""
 
     shp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
 
+    Set chObj = ws.ChartObjects.Add(left:=0, top:=0, width:=shp.width, height:=shp.height)
+    chObj.name = g_ExportTempChartName_
+
+    Application.OnTime Now + TimeValue("00:00:01"), "'" & ThisWorkbook.name & "'!PasteAndExportTempChartPng"
+End Sub
+
+Public Sub PasteAndExportTempChartPng()
+    Dim ws As Worksheet
     Dim chObj As ChartObject
-    Set chObj = ws.ChartObjects.Add(Left:=0, Top:=0, Width:=shp.Width, Height:=shp.Height)
+
+    On Error GoTo EH
+
+    Set ws = ThisWorkbook.Worksheets(g_ExportWsName_)
+    Set chObj = ws.ChartObjects(g_ExportTempChartName_)
 
     With chObj.Chart
-        .ChartArea.Clear
         .Paste
-        .Export Filename:=outputPath, FilterName:="PNG"
+        .Export fileName:=g_ExportOutputPath_, FilterName:="PNG"
     End With
 
     chObj.Delete
+    Application.CutCopyMode = False
+
+    g_ExportBusy_ = False
+    g_ExportDone_ = True
+    Exit Sub
+
+EH:
+    On Error Resume Next
+    If Not chObj Is Nothing Then chObj.Delete
+    Application.CutCopyMode = False
+
+    g_ExportLastError_ = Err.Description
+    g_ExportBusy_ = False
+    g_ExportDone_ = True
 End Sub
 
-Private Sub EnsureFolderExists(ByVal folderPath As String)
-    Dim fso As Object
-    Set fso = CreateObject("Scripting.FileSystemObject")
+Public Sub WaitForExportShapeAsPng(Optional ByVal timeoutSec As Long = 15)
+    Dim startT As Single
 
-    If Not fso.FolderExists(folderPath) Then
-        fso.CreateFolder folderPath
+    startT = Timer
+
+    Do While g_ExportDone_ = False
+        DoEvents
+        Sleep 50
+
+        If Timer - startT > timeoutSec Then
+            g_ExportBusy_ = False
+            Err.Raise vbObjectError + 2602, "WaitForExportShapeAsPng", _
+                      "画像エクスポートがタイムアウトしました。"
+        End If
+    Loop
+
+    If Len(g_ExportLastError_) > 0 Then
+        Err.Raise vbObjectError + 2603, "WaitForExportShapeAsPng", g_ExportLastError_
     End If
 End Sub
 
