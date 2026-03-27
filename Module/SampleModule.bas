@@ -2255,3 +2255,113 @@ Public Sub Sample_43_Dispatch_Event_APIs()
     
     drv.CloseWindow
 End Sub
+
+'========================================================
+' 44. 既存ブラウザ attach API
+' 何ができるか:
+' - NewAttachedEdgeDriver で、開きっぱなしの既存 Edge に再接続できる
+' - 一度 VBA 側のオブジェクト参照を切った後でも、再 attach できる
+' - タブタイトル指定で attach 先を切り替えられる
+'
+' 使いどころ:
+' - VBA セッション終了後に既存ブラウザの操作を再開したいケース
+' - NewAttachedEdgeDriver が通常の Web サイト相手に通るか確認したいケース
+' - タイトル指定 attach の最低限の動作確認をしたいケース
+'
+' このサンプルの確認ポイント:
+' - 1回目の Sub 終了後も Edge が開いたまま残ること
+' - 2回目の Sub で NewAttachedEdgeDriver により既存ブラウザへ接続できること
+' - attach 後に新規タブで yahoo.co.jp を開けること
+' - 3回目の Sub でタイトル指定 attach により元の Google タブへ戻れること
+'
+' 注意:
+' - 各 Sub で drv はローカル変数とし、最後に Set drv = Nothing する
+' - CloseWindow はブラウザ自体を閉じるため、このサンプルでは使わない
+'========================================================
+Public Sub Sample_44_AttachExistingEdge()
+    ' 1. サブ関数で Edge で Google.com を開く
+    Call Sample_44_OpenGoogleInEdge_KeepBrowser
+
+    ' 2. その関数を閉じる
+    '    → 上の Sub 内で Set drv = Nothing 済み
+    '      ブラウザは開きっぱなし
+
+    ' 3. attach 用関数を実行して既存ブラウザにつなげる
+    ' 4. 新規タブ開いて yahoo.co.jp につなげる
+    ' 5. attach 用関数閉じる
+    Call Sample_44_AttachAndOpenYahoo
+
+    ' 6. タブタイトル指定の attach 用関数実行
+    Call Sample_44_AttachByTitle
+End Sub
+
+Private Sub Sample_44_OpenGoogleInEdge_KeepBrowser()
+    Dim drv As IWebDriver
+
+    Set drv = New EdgeDriver
+    drv.OpenURL "https://www.google.com/"
+    Debug.Print "Step1 URL=" & drv.URL
+
+    ' タイトル指定 attach 用に一意なタイトルへ変更
+    drv.ExecuteScript "document.title='Sample44_Google_Tab';"
+
+    ' VBA 側の参照だけ切る
+    Set drv = Nothing
+End Sub
+
+Private Sub Sample_44_AttachAndOpenYahoo()
+    Dim drv As IWebDriver
+    Dim tabList As String
+    Dim ary As Variant
+    Dim tabCountBefore As Long
+    Dim tabCountAfter As Long
+
+    ' 既存ブラウザへ attach
+    Set drv = NewAttachedEdgeDriver()
+    Debug.Print "Step3 URL=" & drv.URL
+
+    ' 現在のタブ数を取得
+    tabList = drv.GetTabList()
+    If Len(tabList) = 0 Then
+        tabCountBefore = 0
+    Else
+        ary = Split(tabList, ",")
+        tabCountBefore = UBound(ary) - LBound(ary) + 1
+    End If
+
+    ' 新規タブで Yahoo を開く
+    drv.ExecuteScript "window.open('https://www.yahoo.co.jp/','_blank');"
+
+    ' 新規タブが列挙されるまで待つ
+    Do
+        drv.SleepByWinAPI 200
+        DoEvents
+
+        tabList = drv.GetTabList()
+        If Len(tabList) = 0 Then
+            tabCountAfter = 0
+        Else
+            ary = Split(tabList, ",")
+            tabCountAfter = UBound(ary) - LBound(ary) + 1
+        End If
+
+        If tabCountAfter > tabCountBefore Then Exit Do
+    Loop
+
+    ' 右端の新規タブへ切り替える
+    drv.SwitchTabByIndex tabCountAfter
+    Debug.Print "Step4 URL=" & drv.URL
+
+    ' attach 用オブジェクトを閉じる
+    Set drv = Nothing
+End Sub
+
+Private Sub Sample_44_AttachByTitle()
+    Dim drv As IWebDriver
+
+    Set drv = NewAttachedEdgeDriver("Sample44_Google_Tab")
+    Debug.Print "Step6 URL=" & drv.URL
+
+    Set drv = Nothing
+End Sub
+
