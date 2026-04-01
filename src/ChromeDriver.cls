@@ -11,6 +11,16 @@ Attribute VB_Exposed = False
 Option Explicit
 Implements IWebDriver
 
+#If VBA7 Then
+    #If Win64 Then
+        Private Declare PtrSafe Function GetTickCount64 Lib "kernel32" () As LongLong
+    #Else
+        Private Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
+    #End If
+#Else
+    Private Declare Function GetTickCount Lib "kernel32" () As Long
+#End If
+
 Private Declare PtrSafe Function FindWindow Lib "user32" Alias "FindWindowA" ( _
         ByVal lpClassName As String, ByVal lpWindowName As String) As Long
 Private Const CLASS_NAME As String = "Chrome_WidgetWin_1"
@@ -76,6 +86,19 @@ Private downloadWatchCandidateStableCount_ As Long
 
 Private processId_ As Long
 Private chromeHwnd_ As LongPtr
+
+' ミリ秒単位の経過時間を取得する
+Private Function TickMs_() As Double
+#If VBA7 Then
+    #If Win64 Then
+        TickMs_ = CDbl(GetTickCount64())
+    #Else
+        TickMs_ = CDbl(GetTickCount())
+    #End If
+#Else
+    TickMs_ = CDbl(GetTickCount())
+#End If
+End Function
 
 ' 専用ブラウザ起動と内部初期化を行う
 Private Sub Class_Initialize()
@@ -1109,13 +1132,16 @@ Private Sub IWebDriver_DownloadWatchStart(downloadDir As String, Optional allowA
 End Sub
 ' ダウンロード完了まで待機する
 Private Function IWebDriver_DownloadWatchWaitCompleted(maxWaitTime_sec As Long) As Boolean
-    Dim startT As Single
+    Const QUIET_MILLIS As Long = 1500
+
+    Dim startTick As Double
     Dim candidatePath As String
     Dim fileName As String
     Dim sizeNow As Double
-    Dim fileNameLower As String
+    Dim lastChangedTick As Double
 
-    startT = Timer
+    startTick = TickMs_()
+    lastChangedTick = startTick
 
     Do
         candidatePath = ResolveCurrentDownloadCandidatePath_()
@@ -1125,32 +1151,33 @@ Private Function IWebDriver_DownloadWatchWaitCompleted(maxWaitTime_sec As Long) 
                 downloadWatchCandidatePath_ = candidatePath
                 downloadWatchCandidateLastSize_ = -1
                 downloadWatchCandidateStableCount_ = 0
+                lastChangedTick = TickMs_()
             End If
 
             If Len(Dir$(candidatePath, vbNormal Or vbHidden Or vbReadOnly Or vbSystem)) > 0 Then
                 sizeNow = FileLen(candidatePath)
 
-                If CDbl(downloadWatchCandidateLastSize_) = CDbl(sizeNow) Then
-                    downloadWatchCandidateStableCount_ = downloadWatchCandidateStableCount_ + 1
-                Else
+                If CDbl(downloadWatchCandidateLastSize_) <> CDbl(sizeNow) Then
+                    downloadWatchCandidateLastSize_ = sizeNow
                     downloadWatchCandidateStableCount_ = 0
+                    lastChangedTick = TickMs_()
+                Else
+                    downloadWatchCandidateStableCount_ = downloadWatchCandidateStableCount_ + 1
                 End If
 
-                downloadWatchCandidateLastSize_ = sizeNow
                 fileName = FileNameFromPathLocal_(candidatePath)
 
-                ' 最終ファイルが2回連続で同サイズなら完了
+                ' temp拡張子でなく、かつ一定時間サイズ変化がなければ完了
                 If IsTempDownloadFileName_(LCase$(fileName)) = False Then
-                    If downloadWatchCandidateStableCount_ >= 1 Then
+                    If (TickMs_() - lastChangedTick) >= QUIET_MILLIS Then
                         events_.DownloadInfoDic("State") = "completed"
                         events_.DownloadInfoDic("FilePath") = candidatePath
                         events_.DownloadInfoDic("SuggestedFilename") = fileName
 
-                        fileNameLower = LCase$(fileName)
-                        If downloadWatchKnownFiles_.Exists(fileNameLower) Then
-                            downloadWatchKnownFiles_(fileNameLower) = CDbl(FileDateTime(candidatePath))
+                        If Not downloadWatchKnownFiles_.Exists(LCase$(fileName)) Then
+                            downloadWatchKnownFiles_.Add LCase$(fileName), CDbl(FileDateTime(candidatePath))
                         Else
-                            downloadWatchKnownFiles_.Add fileNameLower, CDbl(FileDateTime(candidatePath))
+                            downloadWatchKnownFiles_(LCase$(fileName)) = CDbl(FileDateTime(candidatePath))
                         End If
 
                         IWebDriver_DownloadWatchWaitCompleted = True
@@ -1160,12 +1187,12 @@ Private Function IWebDriver_DownloadWatchWaitCompleted(maxWaitTime_sec As Long) 
             End If
         End If
 
-        If CLng(Timer - startT) > maxWaitTime_sec Then Exit Function
+        If (TickMs_() - startTick) >= (CDbl(maxWaitTime_sec) * 1000#) Then Exit Function
 
         DoEvents
         Helper_.SleepByWinAPI 200
     Loop
-End Function ' 提案ファイル名を返す
+End Function　' 提案ファイル名を返す
 Private Function IWebDriver_DownloadWatchSuggestedFilename() As String
     Dim s As String
 
