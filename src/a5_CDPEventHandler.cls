@@ -226,10 +226,9 @@ Private Sub SetDialogInfo(ByVal EventInfo As String)
     End If
     DialogInfoDic("DefaultPrompt") = json_.GetValue(EventInfo, "params", "defaultPrompt")
 End Sub
+
 ' ダイアログ情報辞書を初期化する
 Private Sub InitializeDialogInfo()
- Set DownloadInfoDic = CreateObject("Scripting.Dictionary")
- Call ClearDownloadInfo
     DialogInfoDic.RemoveAll
     DialogInfoDic.Add "IsExistDialog", False
     DialogInfoDic.Add "DialogMessage", ""
