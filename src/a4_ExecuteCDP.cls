@@ -56,6 +56,7 @@ Public Function SetLifecycleEventsEnabled(enabled As Boolean) As String
     SetLifecycleEventsEnabled = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 ' Browser系************************************************
+' ブラウザセッションを閉じる
 Public Function SessionClose() As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.SessionClose
@@ -167,30 +168,77 @@ End Function
 ' *******************************************************************
 
 ' DOM操作系************************************************
+' DOM ドメインを有効化する
 Public Function DOMEnable() As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.DOM_Enable()
     DOMEnable = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 
+' DOMStorage ドメインを有効化する
+Public Function DOMStorageEnable() As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageEnable()
+    DOMStorageEnable = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' DOMStorage ドメインを無効化する
+Public Function DOMStorageDisable() As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageDisable()
+    DOMStorageDisable = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' DOMStorage の項目一覧を取得する
+Public Function DOMStorageGetItems(securityOrigin As String, storageKey As String, isLocal As Boolean) As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageGetItems(securityOrigin, storageKey, isLocal)
+    DOMStorageGetItems = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' DOMStorage の項目を設定する
+Public Function DOMStorageSetItem(securityOrigin As String, storageKey As String, isLocal As Boolean, key As String, value As String) As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageSetItem(securityOrigin, storageKey, isLocal, key, value)
+    DOMStorageSetItem = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' DOMStorage の項目を削除する
+Public Function DOMStorageRemoveItem(securityOrigin As String, storageKey As String, isLocal As Boolean, key As String) As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageRemoveItem(securityOrigin, storageKey, isLocal, key)
+    DOMStorageRemoveItem = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' DOMStorage をクリアする
+Public Function DOMStorageClear(securityOrigin As String, storageKey As String, isLocal As Boolean) As String
+    Dim sendMsg As String
+    sendMsg = MsgGenerate_.DOMStorageClear(securityOrigin, storageKey, isLocal)
+    DOMStorageClear = MsgHandler_.SendAndReceive(sendMsg)
+End Function
+
+' 指定要素へフォーカスを設定する
 Public Function Focus(objectId As String) As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.Focus(objectId)
     Focus = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 
+' 要素のボックスモデルを取得する  
 Public Function GetBoxModel(objectId As String) As Variant
     Dim sendMsg As String
     sendMsg = MsgGenerate_.GetBoxModel(objectId)
     GetBoxModel = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 
+' file input へファイルパスを設定する
 Public Function SetFileInputFiles(objectId As Variant, files As String) As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.SetFileInputFiles(objectId, files)
     SetFileInputFiles = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 
+' CSS セレクタで要素を検索する（デバッグ用）
 Public Sub FindElementByQuerySelector(Selector As String)
     Dim sendMsg As String, resMsg As String
     sendMsg = MsgGenerate_.querySelector(Selector)
@@ -205,12 +253,14 @@ End Sub
 ' ************************************************
 
 ' Input系************************************************
+' JavaScript の click() を要素へ発行する
 Public Function Click(objId As String) As String
     CallJavaScriptFunction "function(value){this.click();}", objId, ""
 End Function
 ' ************************************************
 
 ' Target:Page系************************************************
+' 指定 URL を開く
 Public Function OpenURL(targetURL As String) As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.URLOpen(targetURL)
@@ -516,7 +566,7 @@ Public Function WaitForDomMutation(timeoutSec As Long) As Boolean
     WaitForDomMutation = False
 End Function
 
-' Storage domain
+' Storage の Cookie 一覧を取得する
 Public Function StorageGetCookies() As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.StorageGetCookies()
@@ -542,48 +592,6 @@ Public Function StorageGetStorageKey(Optional frameId As String = "") As String
     Dim sendMsg As String
     sendMsg = MsgGenerate_.StorageGetStorageKey(frameId)
     StorageGetStorageKey = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage domain
-Public Function DOMStorageEnable() As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageEnable()
-    DOMStorageEnable = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage ドメインを無効化する
-Public Function DOMStorageDisable() As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageDisable()
-    DOMStorageDisable = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage の項目一覧を取得する
-Public Function DOMStorageGetItems(securityOrigin As String, storageKey As String, isLocal As Boolean) As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageGetItems(securityOrigin, storageKey, isLocal)
-    DOMStorageGetItems = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage の項目を設定する
-Public Function DOMStorageSetItem(securityOrigin As String, storageKey As String, isLocal As Boolean, key As String, value As String) As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageSetItem(securityOrigin, storageKey, isLocal, key, value)
-    DOMStorageSetItem = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage の項目を削除する
-Public Function DOMStorageRemoveItem(securityOrigin As String, storageKey As String, isLocal As Boolean, key As String) As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageRemoveItem(securityOrigin, storageKey, isLocal, key)
-    DOMStorageRemoveItem = MsgHandler_.SendAndReceive(sendMsg)
-End Function
-
-' DOMStorage をクリアする
-Public Function DOMStorageClear(securityOrigin As String, storageKey As String, isLocal As Boolean) As String
-    Dim sendMsg As String
-    sendMsg = MsgGenerate_.DOMStorageClear(securityOrigin, storageKey, isLocal)
-    DOMStorageClear = MsgHandler_.SendAndReceive(sendMsg)
 End Function
 
 ' アラートダイアログを受諾する
