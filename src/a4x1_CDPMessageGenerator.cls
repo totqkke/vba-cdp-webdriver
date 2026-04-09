@@ -272,7 +272,7 @@ Public Function RequestChildNodes() As String
     RequestChildNodes = message
 End Function
 
-' 指定要素へフォーカスを設定する
+' ボックスモデルを取得する
 Public Function GetBoxModel(objectId As String) As String
     id_ = id_ + 1
 
@@ -495,14 +495,6 @@ Public Function PageRemoveScriptToEvaluateOnNewDocument(identifier As String) As
               """identifier"": " & JsonString(identifier) & "}}"
 
     PageRemoveScriptToEvaluateOnNewDocument = message
-End Function
-
-' Page.setLifecycleEventsEnabled のメッセージを生成する
-Public Function PageSetLifecycleEventsEnabled(enabled As Boolean) As String
-    id_ = id_ + 1
-    Dim message As String
-    message = "{""id"": " & id_ & ",""method"": ""Page.setLifecycleEventsEnabled"",""params"": {""enabled"": " & LCase$(CStr(enabled)) & "}}"
-    PageSetLifecycleEventsEnabled = message
 End Function
 
 ' Page.setInterceptFileChooserDialog のメッセージを生成する
