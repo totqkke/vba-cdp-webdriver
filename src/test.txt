@@ -1,2 +1,4 @@
-Debug.Print drv.ExecuteScript("try{localStorage.setItem('__VBA_TEST__','ok'); localStorage.getItem('__VBA_TEST__');}catch(e){'ERR:' + e.message;}")
-ERR:Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+    If (objdrv.IsElementPresent(By.ID, "proceed-link") = True) Then
+        objdrv.FindElement(By.ID, "details-button").Click
+        objdrv.FindElement(By.ID, "proceed-link").Click
+    End If
