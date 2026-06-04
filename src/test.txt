@@ -1,7 +1,0 @@
-
-    Driver.ExecuteScript ("(() => { const t = document.evaluate('//*[@name=\""validDays\""]/parent::*//a[contains(@class,\""ui-spinner-down\"")]', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue; if (t) { Object.assign(t.style, { pointerEvents: \""auto\"", opacity: \""1\"", visibility: \""visible\"" }); [\""mousedown\"", \""mouseup\""].forEach(e => t.dispatchEvent(new MouseEvent(e, { bubbles: true, cancelable: true, view: window }))); requestAnimationFrame(() => t.click()); } else console.error(\""Element not found\""); })();")
-
-
-
-Driver.FindElementByXPath("//*[text()=""OK""]").DispatchCDPMouseEvent LeftClick_XY, Center
-Driver.FindElementByXPath("//*[text()=""保存""]").DispatchCDPMouseEvent LeftClick_XY, Center
