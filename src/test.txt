@@ -1,0 +1,7 @@
+Debug.Print drv.ExecuteScript("location.href;")
+Debug.Print drv.ExecuteScript("document.title;")
+Debug.Print drv.ExecuteScript("document.body ? document.body.innerText.substring(0,500) : '';")
+
+Debug.Print drv.ExecuteScript("document.documentElement ? document.documentElement.innerText.substring(0,1000) : '';")
+Debug.Print drv.ExecuteScript("document.querySelector('button') ? document.querySelector('button').innerText : '';")
+Debug.Print drv.ExecuteScript("Array.from(document.querySelectorAll('button,a')).map(e=>e.innerText||e.textContent).join('|');")
